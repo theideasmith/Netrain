@@ -1,0 +1,17 @@
+import os                                         
+import sys                                        
+                                                  
+sys.path.append('{path_prefix}/src')              
+import Constants as const                         
+tasknum = int(os.environ['SLURM_ARRAY_TASK_ID'])  
+fd = open('{train_script}', 'r')                  
+lines = fd.readlines()                            
+print tasknum, len(lines)                         
+fd.close()                                        
+task = lines[tasknum-1]                           
+args = map(lambda a: a, task.split(' '))[2:-1]    
+print 'Running Task {}'.format(args )             
+from montecarlotrain import run                   
+                                                  
+run(args)                                         
+                                                  

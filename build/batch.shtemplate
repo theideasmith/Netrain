@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+#SBATCH --job-name='{jobname} trainer'
+#SBATCH -o {slurmout}/slurm-{jobname}-%j.out
+#SBATCH --array=1-{array_jobs}
+#SBATCH --time=16:10:00
+#SBATCH -p all
+#SBATCH -n 4
+#SBATCH -N 1
+
+. activate {conda_env}
+source {jobsinit}
+python {initialize}

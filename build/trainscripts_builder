@@ -1,0 +1,362 @@
+#!/usr/bin/env python
+# -*- coding: UTF-8 -*-
+import re
+import sys                                 
+
+def error(frame, event, err):
+  sys.stdout.write(str(err))
+
+#sys.settrace(error)
+
+import os                                  
+import time
+import json
+import numpy as np
+currdir = os.path.dirname(os.path.realpath(__file__))  
+os.system("source %s" % os.path.join(currdir, "../jobsinit.sh"))
+sys.path.append(os.path.join(currdir, '../src/')) 
+import subprocess
+import Constants as const
+import argparse
+PATH_PREFIX = const.PATH_PREFIX                                                            
+                                                                                           
+# This little bit of code creates a new folder                                             
+# each time you run genscripts                                                             
+# so all the data is neat                                                                  
+
+
+training_dirnames = filter(lambda f: f!='log.txt', os.listdir(const.TRAININGS_DATA_DIR))                                   
+
+def gen_build_name():
+  date_dirname =  time.strftime("%d.%m.%Y")                                                  
+
+  matching = [ int(re.search(r"\d+", tr_dir).group(0)) for tr_dir in training_dirnames if tr_dir.find(date_dirname)!=-1 ]     
+  num_today = max(matching) if len(matching)> 0 else 0                                                                 
+  new_num = num_today + 1                                                                    
+                                                                                           
+  training_directory_name = '{}:'.format(new_num) + date_dirname                          
+  return os.path.join(const.TRAININGS_DATA_DIR, training_directory_name)
+
+def mk_build(name):
+  """
+  Makes a new build directory at the data training path
+  given a build directory name
+  """
+  training_directory_name = name
+  training_directory = os.path.join(PATH_PREFIX, 'trainings', training_directory_name)       
+  print "Generating project directory" 
+  print training_directory
+  os.mkdir(training_directory)                                                               
+  return training_directory
+
+def gen_data_folders_map(training_directory):
+  data_folders = [                                                   
+      'slurmout',                                                    
+      'architecture',                                                
+      'weights',                                                     
+      'model_metrics',                                               
+      'scripts',                                                     
+      'trainscripts']                                                
+  data_folders_map ={}                                               
+                                                                     
+  for name in data_folders:                                          
+    data_folders_map[name] = os.path.join(training_directory, name)  
+  return data_folders_map
+
+def populate_build_dir(training_directory):
+
+  data_folders = [
+      'slurmout', 
+      'architecture',
+      'weights', 
+      'model_metrics', 
+      'scripts',
+      'trainscripts']                    
+  data_folders_map ={}
+
+  for name in data_folders: 
+    data_folders_map[name] = os.path.join(training_directory, name) 
+    if not os.path.exists(data_folders_map[name]):                                                                                       
+      os.mkdir(data_folders_map[name]) 
+  return data_folders_map
+
+
+def gen_call_str(modelclass, architecture, nnets, args):                                           
+  script_path = const.MAIN_SCRIPT 
+  train = ''.join([
+	'python %s ' % script_path,                                                    
+         '--architecture=%s ' % architecture,                                                           
+         '--archpath=%s ' % args['paths']['architecture'],
+         '--wpath=%s ' %args['paths']['weights'],                                                   
+         '--metricspath=%s ' %args['paths']['model_metrics'],                                            
+         '--nb_epoch=%d '  % args['nb_epoch'],                                               
+         '--nnets=%d ' % nnets,
+         '--class=%s ' %modelclass,
+         '--intelligent=%s '%args['intelligent'],
+         '--epoch_samples=%d ' %args['epoch_samples']])                                          
+
+  return train                                                            
+
+def extract_modelarchs(string):
+  string = string.replace(" ", "")
+  results = []
+  for modelspec in string.split(","):
+    components = modelspec.split("=")
+    classarch = components[0].split(".")
+    if classarch[1] != '' and components[1] != '':
+      results.append([classarch[0], classarch[1], int(components[1])])
+    elif classarch[1] == '':
+      results.append([classarch[0], '', int(components[1])])
+    elif classarch[1] != '' and components[1] == '':
+      results.append([classarch[0], classarch[1], 1])
+
+  return results
+
+def deleteif(fname):
+  if os.path.exists(fname): 
+    os.remove(fname)
+
+def template_file(fname, template, fname_writeto=None):
+  loadedfile = open(fname, 'r')
+  loaded =loadedfile.read()
+  loadedfile.close()
+  replaced = str(loaded)
+  for k,v in template.iteritems():
+    replaced = replaced.replace('{%s}'%k, v)
+  print "Generating template file " + fname
+  print "Writing template file to "  + fname_writeto
+
+  if fname_writeto != None:
+    deleteif(fname_writeto)
+    writeto = open(fname_writeto, 'w')	
+    writeto.write(replaced)
+    writeto.close()
+
+def writetrainscripts(modelclass,modelarch, nnets, args):
+
+
+  trainscripts_file = os.path.join(       
+    args['output'],                    
+    'trainscripts',
+    '{}-{}-train_script.txt'.format(modelclass, modelarch))   
+  print "Writing training scripts to"
+  # Writing trainscripts                  
+  f = open(trainscripts_file, 'w')        
+  for i in xrange(args['array']):      
+    procstr = gen_call_str(modelclass, modelarch, nnets, args)          
+    f.write(procstr+'\n')                 
+  f.close()                               
+  return trainscripts_file
+
+def write_runbatch(args):
+  
+  template_replacements = {                                                                                                                            
+      'path_prefix': const.PATH_PREFIX,                                                                                                                 
+      'array_jobs':str(args['array']),                                                                                                                  
+   }			                                                                                                                               
+  template_file(os.path.join(currdir, 'runbatch.shtemplate'), template_replacements, fname_writeto=os.path.join(args['output'], 'runbatch.sh')) 
+
+def write_sbatchrunner(modelclass, modelarch, nnets, args):
+  shtemplate_fname =  "./batch.shtemplate" if not args['gpu'] else "./batch_gpu.shtemplate"                                                             
+  initializertemplate_fname = './initialize.pytemplate' 
+
+  # IMPORTANT: This is writing the training scripts
+  # which actually do the dispatching
+  trainscripts_file = writetrainscripts(modelclass, modelarch, nnets, args)                                                                                                                                                  
+
+  template_fname = os.path.join(currdir, shtemplate_fname)                                                                                            
+
+  # The name of the file the sbatch file will call to actually do the training
+  initializer_fname =  os.path.join(args['output'], 'scripts', modelarch+'-'+modelclass+'-initialize.py')                                                                            
+
+  # The name of the file that will run sbatch
+  sbatch_fname = os.path.join(args['output'], 'scripts', modelarch+'-'+modelclass+'-sbatch.sh')                                                                            
+  
+  # Making template substitutions for bash script                                                                                                                 
+  shtemplate_replacements = {                                                                                                                         
+     'slurmout': args['paths']['slurmout'],                                                                                                      
+     'array_jobs':str(args['array']),                                                                                                            
+     'jobname': modelarch+'.'+modelclass,
+     'conda_env': const.GPU_ENV if args['gpu'] else const.NORMAL_ENV,
+     'jobsinit': os.path.join(const.PATH_PREFIX, 'jobsinit.sh'),
+     'initialize': initializer_fname
+  }
+  
+  initializer_replacements = {
+   'train_script': trainscripts_file,                                                                                                               
+   'path_prefix': const.PATH_PREFIX,                                                                                                                
+  }
+
+  # For the sbatch file  			                                                                                                                              
+ 
+  template_file(shtemplate_fname, shtemplate_replacements,fname_writeto=sbatch_fname)                                                                   
+  
+  # For the python file called by each run of sbatch
+  template_file(initializertemplate_fname, initializer_replacements, fname_writeto=initializer_fname)
+
+def add_architectures(args):
+  for unit in args['models']:                                         
+    modelclass, modelarch, nnets = unit
+    write_sbatchrunner(modelclass, modelarch, nnets, args)                                                
+
+def add(args):
+  args = vars(args)
+  build_dir  = os.path.join(PATH_PREFIX, 'trainings', args['to'])       
+  args['build_dir'] = build_dir
+  args['output']=args['to']
+  if args['to'] =="":
+    raise InputError("No project specified to which new architectures will be written to")
+  data_folders_map = gen_data_folders_map( build_dir )
+  args['paths'] = data_folders_map
+  add_architectures(args)
+
+
+def dictify_args(arguments):
+  args = vars(arguments)
+  name = args['output']                              
+  build_dir = mk_build(name)                         
+  data_folders_map = populate_build_dir( build_dir ) 
+  args['paths'] = data_folders_map                   
+  args['build_dir'] = build_dir
+  return args
+
+def configuration_dump(args):
+  configuration = json.dumps(args, sort_keys=True, indent=4, separators=(',',':'))                                       
+  jsonfile = open(os.path.join(args['build_dir'], "configuration.json"), 'w')    
+  jsonfile.write(configuration)                                          
+  jsonfile.close()                                                       
+
+def build_project(arguments):
+
+ args = dictify_args(arguments)
+ write_runbatch(args)
+ add_architectures(args)
+ configuration_dump(args)
+ print args['build_dir']
+ if args["run"]:
+   os.system("bash {}".format(os.path.join(args['build_dir'], "runbatch.sh")))
+
+def list_projects(arguments):
+  arguments = vars(arguments)
+  directory = const.TRAININGS_DATA_DIR
+  files = os.listdir(directory)
+  full_list = [os.path.join(directory,i) for i in files] 
+  time_sorted_list = sorted(full_list, key=os.path.getmtime)
+
+  # if you want just the filenames sorted, simply remove the dir from each
+  sorted_files = [ os.path.basename(i) for i in time_sorted_list]
+
+
+  for f in sorted_files:
+    path = os.path.join(directory, f)
+    if not os.path.isdir(path): continue
+    if arguments['names']:
+      print f
+      continue
+    fname =  os.path.join(path, 'configuration.json') 
+    if os.path.exists(fname):
+       config = json.load(open(fname))
+       description = config["desc"] if "desc" in config else "None"
+       name = f
+       string = "- {}: {}".format(name,description)
+    else:
+      name = f
+      string = "- {}".format(name)
+
+    
+    print string
+    narch = " - {} trained architectures".format(len(os.listdir(os.path.join(path, "architecture"))))
+    print narch
+    archs = " - {}".format(
+        np.unique(map(os.path.basename, os.listdir(os.path.join(path, "scripts"))))
+    )
+    print archs
+    print "-"*30
+
+def build_architecture_generator_parser(parser):
+  parser.add_argument(                  
+    '--gpu',                              
+     help=("whether to use GPU. Only turn this on if you are using a "
+       "GPU enabled cluster. NOTE: to use GPU you must first load in tensorflow."
+       " Do this by installing Tensorflow into a conda environment. See the tensorflow section in the Netrain guide for more information"),
+     dest="gpu",                          
+     action="store_true")                 
+  parser.set_defaults(gpu=False)          
+  parser.add_argument(                                                
+     "--models",                                                        
+     help=("A comma separated list where each element has the format "
+            "modelclass.modeltype=number_of_this_model_per_job. "
+            " As an example: "
+            "\"--models=classifier.GHY=2, autoregr.triplets=14\""),
+     default="autoencoder.simple_dense",                                
+   type=extract_modelarchs)                                                          
+  parser.add_argument(                  
+     "--array",                           
+     help = "Number of array jobs to run. For each array job, all the models specified in \"--models\" are trained. Each array job will train the same number and type of models as specified by \"--models\"", 
+     default=1,                          
+     type=int)                            
+  parser.add_argument(                  
+     "--nb_epoch",                        
+     help = "number of keras epochs to train models for", 
+     default=100,                         
+     type=int)                            
+  parser.add_argument(                  
+    "--epoch_samples",                    
+    help = "How many samples the model trains per epoch", 
+    default=100,                          
+    type=int)                             
+  parser.add_argument(
+    "--run",
+    help = "Whether the batches should be sent to spock immediately after running this script",
+    default=False,
+    type=bool)
+  parser.add_argument(
+    "--intelligent",
+    help="< True | False > Whether to stop training model when error stop changing",
+    default=False,
+    type=bool)
+parser = argparse.ArgumentParser()   
+subparsers = parser.add_subparsers()
+
+parser.add_argument(                         
+  "--output",                                
+  default=gen_build_name(),                  
+  type=str)                                  
+
+generate = subparsers.add_parser('generate')
+generate.set_defaults(simulate=False)  
+build_architecture_generator_parser(generate)  
+generate.add_argument(
+    "--desc",
+    help="Optionally add a description for this batch of models. This is useful if you want to keep track of which models you trained when",
+    default="None",
+    type=str)
+generate.set_defaults(command="generate")
+
+# Add an architecture to an existing project
+add_arch = subparsers.add_parser("add")
+add_arch.add_argument(
+    "--to",
+    type=str)
+build_architecture_generator_parser(add_arch)
+add_arch.set_defaults(command="add")
+
+# List projects
+show = subparsers.add_parser("show")
+show.set_defaults(command="show")
+show.add_argument(
+  "-n",
+  '--names',
+  action='store_true'
+)
+
+parsedargs = parser.parse_args()
+func_map = {
+    "generate": build_project,
+    "add": add,
+    "show": list_projects
+}
+
+func = func_map[parsedargs.command]
+func(parsedargs)
+

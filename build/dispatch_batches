@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# Takes a directory built with trainscripts builder
+# and submits its batches to the cluster
+
+
+source {path_prefix}/jobsinit.sh                                
+
+folder=$1
+echo $folder
+for arch in $( ls $folder/scripts/*.py ); do
+  #echo $arch
+  sbatch --array=1-10 $arch
+done

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Integrates the pipeline for submitting batches
+# to the cluster
+grandparent_path=$( cd "$(dirname "${BASH_SOURCE}")/../" ; pwd -P )
+built_sbatch_proj=$( $grandparent_path/AutoencoderTrain/trainscripts_builder )
+echo $built_sbatch_proj
+cd $built_sbatch_proj
+filename=$( echo $built_sbatch_proj | grep -o '[^/]*$' )
+currtime=$( python -c 'import time; print time.ctime()' ) 
+cd ..
+pwd
+echo "$currtime, $filename" >> log.txt
+bash $built_sbatch_proj/runbatch.sh
