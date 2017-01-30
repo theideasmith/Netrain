@@ -77,7 +77,7 @@ Now, you'll need to actually define `model_configurator`. Remember that `netrain
 | `"wpath"`                           | Path to the directory to which mdoel weights are stored |
 | `"archpath"`                        | Path to the directory to which architectures are stored |
 | `"metricspath"`                     | Path to the directory to which metrics are stored |
-|                                     |                                          |
+| `"trainingrun"`                     | When training using sbatch, this input variable specifies the number array job of the current process. So if you had wanted to train 100 modelclass.modelarch models each on its own process, then this variable will let you know which process is the current process; perhaps if you wanted to make modifications to each of the models for hyperparameter optimization. |
 |                                     |                                          |
 
 Once passed a dictionary with this data, the `model_configuration_function` must return a dictionary with the following data all present. If all fields are not present, then something will break. So you must be sure to be positive all fields are present. 
@@ -96,7 +96,7 @@ Once passed a dictionary with this data, the `model_configuration_function` must
 | `"optimizer"`            | Which optimization scheme to use (see keras optimizers https://keras.io/optimizers/ for the valid options) |
 | `"loss"`                 | Which loss function to use for the model (see keras objectives for the valid options https://keras.io/objectives/) |
 
-
+Anytime you want to introduce a new model you can add the necessary logic to your configuration function
 
 ### WARNING – Make sure `wpath` and `archpath` have enough space to store all your networks and their architectures before you begin training.
 
@@ -132,7 +132,12 @@ For example, let's say you want to train three models, the first two of type `cl
 `./trainscripts generate --models="classifier.clu_one=10, chransynth=32, autoencoder.classical=45 --gpu --array=200 --desc="Initial training test" --epoch_samples=10000 --nb_epoch=1000`
 
 Then, navigate to the directory created which will be printed as output after running the above command. You can either submit all the models at once: 
-`bash  
+
+1. To submit all models at once, run `bash runbatch.sh`
+2. To submit only particular models, navigate to `scripts/` and for each model you want to train, enter `bash modelclass-modelarch-sbatch.sh`. 
+
+This will submit your models to be trained on the cluster to your specification. 
+
 
 
 ```

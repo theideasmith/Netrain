@@ -1,0 +1,28 @@
+{
+    "array":1,
+    "build_dir":"/Users/akivalipshitz/Developer/netrain/trainings/1:22.01.2017",
+    "command":"generate",
+    "desc":"None",
+    "epoch_samples":100,
+    "gpu":false,
+    "intelligent":false,
+    "models":[
+        [
+            "thing",
+            "awal",
+            2
+        ]
+    ],
+    "nb_epoch":100,
+    "output":"/Users/akivalipshitz/Developer/netrain/trainings/1:22.01.2017",
+    "paths":{
+        "architecture":"/Users/akivalipshitz/Developer/netrain/trainings/1:22.01.2017/architecture",
+        "model_metrics":"/Users/akivalipshitz/Developer/netrain/trainings/1:22.01.2017/model_metrics",
+        "scripts":"/Users/akivalipshitz/Developer/netrain/trainings/1:22.01.2017/scripts",
+        "slurmout":"/Users/akivalipshitz/Developer/netrain/trainings/1:22.01.2017/slurmout",
+        "trainscripts":"/Users/akivalipshitz/Developer/netrain/trainings/1:22.01.2017/trainscripts",
+        "weights":"/Users/akivalipshitz/Developer/netrain/trainings/1:22.01.2017/weights"
+    },
+    "run":false,
+    "simulate":false
+}

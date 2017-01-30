@@ -156,7 +156,9 @@ def modelevaluate(model, val_samples=1000, evaluation_generator=None):
 def run(params, trainparametergenerators):
     model = None
     parameters = None
-
+    
+    task_envvar_name = 'SLURM_ARRAY_TASK_ID'
+    task_id = int(os.environ[task_envvar_name])if task_envvar_name in os.environ else None
     if params['class'] in nnets.paramgen:
       paramgen = trainparametergenerators(params['class'])
       parameters = paramgen(params)
@@ -165,6 +167,7 @@ def run(params, trainparametergenerators):
     else:
       raise InputError("Model {} not recognized".format(params['class']))
 
+    parameters["trainingrun"] = task_id
     parameters['model'] = model
     parameters['intelligent'] = params['intelligent']
     exerciseMachine = ModelTrainer(model, parameters)
